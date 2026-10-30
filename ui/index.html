@@ -1,0 +1,453 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Presence Lock</title>
+<style>
+  :root {
+    --bg: #f5f6f8; --card: #ffffff; --text: #1b1f24; --muted: #667085; --line: #e3e6eb;
+    --accent: #2f6fed; --accent-text: #ffffff; --ok: #1a8f4c; --warn: #b7791f; --bad: #c2362f;
+    --present-bg: #e5f5ec; --away-bg: #f1f2f4; --chart-dot: #2f6fed55; --chart-line: #2f6fed;
+    --input: #ffffff;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #111418; --card: #1a1e24; --text: #e7eaee; --muted: #98a2b3; --line: #2b313a;
+      --accent: #5b8ff9; --accent-text: #0d1117; --ok: #3fb96f; --warn: #e0a43c; --bad: #ef6b63;
+      --present-bg: #15301f; --away-bg: #22272e; --chart-dot: #5b8ff955; --chart-line: #7ea6ff;
+      --input: #13171c;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 15px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  header { display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+           padding: 16px 20px; border-bottom: 1px solid var(--line); background: var(--card); }
+  header h1 { font-size: 18px; margin: 0; flex: 1; }
+  .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: var(--muted);
+         margin-right: 6px; vertical-align: 1px; }
+  .dot.ok { background: var(--ok); } .dot.bad { background: var(--bad); } .dot.warn { background: var(--warn); }
+  main { max-width: 980px; margin: 0 auto; padding: 20px 16px 40px; display: grid; gap: 16px;
+         grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 16px 18px; }
+  .card.wide { grid-column: 1 / -1; }
+  .card h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted);
+             margin: 0 0 12px; font-weight: 600; }
+  .presence { border-radius: 10px; padding: 18px; text-align: center; background: var(--away-bg); }
+  .presence.present { background: var(--present-bg); }
+  .presence .big { font-size: 30px; font-weight: 700; letter-spacing: .02em; }
+  .presence.present .big { color: var(--ok); }
+  .stats { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 16px; margin-top: 14px; }
+  .stat small { display: block; color: var(--muted); font-size: 12px; }
+  .stat b { font-size: 17px; font-variant-numeric: tabular-nums; }
+  canvas { width: 100%; height: 220px; display: block; }
+  .legend { display: flex; gap: 16px; font-size: 12px; color: var(--muted); margin-top: 6px; flex-wrap: wrap; }
+  .legend i { display: inline-block; width: 14px; height: 3px; vertical-align: 3px; margin-right: 5px; }
+  label { display: block; font-size: 13px; color: var(--muted); margin: 12px 0 4px; }
+  input[type=text], input[type=password], input[type=number] {
+    width: 100%; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px;
+    background: var(--input); color: var(--text); font: inherit; }
+  input[type=range] { width: 100%; accent-color: var(--accent); }
+  .row { display: flex; align-items: center; gap: 10px; }
+  .row > * { flex: 1; }
+  .val { font-variant-numeric: tabular-nums; font-weight: 600; color: var(--text); }
+  button { font: inherit; padding: 8px 14px; border-radius: 8px; border: 1px solid var(--line);
+           background: var(--card); color: var(--text); cursor: pointer; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); font-weight: 600; }
+  button.danger { color: var(--bad); }
+  button:disabled { opacity: .5; cursor: default; }
+  .buttons { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 14px; }
+  .switch { display: flex; align-items: center; justify-content: space-between; margin-top: 14px; }
+  .switch input { width: 42px; height: 22px; accent-color: var(--accent); }
+  .hint { font-size: 12px; color: var(--muted); margin-top: 6px; }
+  .mono { font-family: ui-monospace, Consolas, monospace; font-size: 13px; word-break: break-all; }
+  #log { height: 180px; overflow: auto; background: var(--input); border: 1px solid var(--line);
+         border-radius: 8px; padding: 8px 10px; white-space: pre-wrap; }
+  .banner { grid-column: 1 / -1; padding: 12px 16px; border-radius: 10px; border: 1px solid var(--warn);
+            color: var(--text); background: var(--card); }
+  .pairing { padding: 12px; border-radius: 8px; border: 1px dashed var(--accent); margin-top: 12px; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Presence Lock <span id="devId" class="hint"></span></h1>
+  <span id="connState"><span class="dot"></span>Not connected</span>
+  <button id="connectBtn" class="primary">Connect</button>
+</header>
+
+<main>
+  <div id="noSerial" class="banner" hidden>
+    This browser can't talk to USB serial devices. Open this page in <b>Chrome</b> or <b>Edge</b>.
+  </div>
+  <div id="intro" class="banner">
+    Click <b>Connect</b> and choose the <b>USB Serial Device</b> for the ESP32 (COM8).
+    Close any other program using that port first, such as a serial monitor.
+  </div>
+
+  <section class="card">
+    <h2>Phone</h2>
+    <div id="presenceBox" class="presence">
+      <div class="big" id="presence">—</div>
+      <div class="hint" id="presenceHint">Waiting for the board</div>
+    </div>
+    <div class="stats">
+      <div class="stat"><small>Signal now</small><b id="rssi">—</b></div>
+      <div class="stat"><small>Smoothed</small><b id="avg">—</b></div>
+      <div class="stat"><small>Last seen</small><b id="seenAgo">—</b></div>
+      <div class="stat"><small>Last strong signal</small><b id="strongAgo">—</b></div>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Lock settings</h2>
+    <label>In-room threshold <span class="val" id="thresholdVal"></span></label>
+    <input type="range" id="threshold" min="-100" max="-40" step="1">
+    <div class="hint">The smoothed signal must be at least this strong to count as in the room.
+      Closer to 0 = you must be nearer the desk.</div>
+    <label>Margin once in the room <span class="val" id="marginVal"></span></label>
+    <input type="range" id="margin" min="0" max="20" step="1">
+    <div class="hint">After you count as in the room, the signal can drop this far below the threshold
+      before it counts as weak. Stops flickering when the signal hovers near the threshold.</div>
+    <label>Lock after away for <span class="val" id="awayVal"></span></label>
+    <input type="range" id="away" min="10" max="300" step="5">
+    <div class="hint">iPhones advertise less often when locked; under ~30 s risks false locks.</div>
+    <div class="switch"><span>Lock the PC when I leave</span><input type="checkbox" id="lock"></div>
+    <div class="buttons">
+      <button id="testLock" class="danger">Test lock now</button>
+    </div>
+  </section>
+
+  <section class="card wide">
+    <h2>Signal, last 5 minutes</h2>
+    <canvas id="chart"></canvas>
+    <div class="legend">
+      <span><i style="background:var(--chart-dot);height:8px;width:8px;border-radius:50%"></i>Each reading</span>
+      <span><i style="background:var(--chart-line)"></i>Smoothed</span>
+      <span><i style="background:var(--ok)"></i>Threshold</span>
+      <span><i style="background:var(--ok);opacity:.45"></i>Stay-present level</span>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>iPhone pairing</h2>
+    <div class="stat"><small>Phone key (IRK)</small><span class="mono" id="irk">—</span></div>
+    <div id="irkWarn" class="hint" hidden style="color:var(--warn)">
+      The key only matches in reversed byte order. <button id="fixIrk">Fix it</button></div>
+    <div class="buttons">
+      <button id="pairBtn" class="primary">Pair iPhone</button>
+    </div>
+    <div id="pairing" class="pairing" hidden>
+      <b>Pairing mode — <span id="pairLeft"></span> left</b>
+      <ol style="margin:8px 0 0 18px;padding:0">
+        <li>On the iPhone open <b>Settings → Bluetooth</b>.</li>
+        <li>Under Other Devices tap <b>Presence Lock</b> and accept the pairing.</li>
+        <li>Not listed? Connect to it with the free <b>nRF Connect</b> app instead.</li>
+      </ol>
+      <div class="buttons"><button id="cancelPair">Cancel</button></div>
+    </div>
+    <label>Or paste a key by hand</label>
+    <div class="row"><input type="text" id="irkInput" placeholder="32 hex characters" class="mono">
+      <button id="irkSave" style="flex:0">Save</button></div>
+  </section>
+
+  <section class="card">
+    <h2>Wi-Fi and Home Assistant</h2>
+    <div class="stats" style="margin-top:0">
+      <div class="stat"><small>Wi-Fi</small><b id="wifiState" style="font-size:14px">—</b></div>
+      <div class="stat"><small>MQTT</small><b id="mqttState" style="font-size:14px">—</b></div>
+    </div>
+    <label>Wi-Fi network (2.4 GHz)</label>
+    <input type="text" id="ssid" autocomplete="off">
+    <label>Wi-Fi password</label>
+    <input type="password" id="wpass" autocomplete="new-password">
+    <label>MQTT broker</label>
+    <div class="row"><input type="text" id="mhost"><input type="number" id="mport" style="flex:0 0 90px"></div>
+    <label>MQTT username</label>
+    <input type="text" id="muser" autocomplete="off">
+    <label>MQTT password</label>
+    <input type="password" id="mpass" autocomplete="new-password">
+    <div class="hint">Leave a password blank to keep the one already saved. Logins are stored on the board only.</div>
+    <div class="buttons"><button id="netSave" class="primary">Save and connect</button></div>
+  </section>
+
+  <section class="card wide">
+    <h2>Log</h2>
+    <div id="log" class="mono"></div>
+  </section>
+</main>
+
+<script>
+const $ = id => document.getElementById(id);
+let port = null, reader = null, writer = null, keepReading = false;
+let status = null, editing = {};
+const readings = [];          // {t, rssi, avg}
+const WINDOW_MS = 5 * 60 * 1000;
+
+if (!('serial' in navigator)) { $('noSerial').hidden = false; $('connectBtn').disabled = true; }
+
+function log(line) {
+  const el = $('log');
+  const atBottom = el.scrollTop + el.clientHeight >= el.scrollHeight - 4;
+  el.textContent += new Date().toLocaleTimeString() + '  ' + line + '\n';
+  if (el.textContent.length > 20000) el.textContent = el.textContent.slice(-15000);
+  if (atBottom) el.scrollTop = el.scrollHeight;
+}
+
+function setConn(text, cls) {
+  $('connState').innerHTML = `<span class="dot ${cls || ''}"></span>${text}`;
+}
+
+// ---------------- serial ----------------
+async function send(cmd) {
+  if (!writer) return;
+  await writer.write(new TextEncoder().encode(cmd + '\n'));
+}
+
+async function openPort(p) {
+  port = p;
+  await port.open({ baudRate: 115200 });
+  // DTR on, RTS off: the ESP32's USB serial treats some DTR/RTS combinations as "reboot"
+  await port.setSignals({ dataTerminalReady: true, requestToSend: false });
+  writer = port.writable.getWriter();
+  keepReading = true;
+  $('intro').hidden = true;
+  $('connectBtn').textContent = 'Disconnect';
+  setConn('Connected', 'ok');
+  readLoop();
+  setTimeout(() => send('stream on'), 300);
+}
+
+async function readLoop() {
+  const decoder = new TextDecoder();
+  let buf = '';
+  while (port && port.readable && keepReading) {
+    reader = port.readable.getReader();
+    try {
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+        let i;
+        while ((i = buf.indexOf('\n')) >= 0) {
+          const line = buf.slice(0, i).replace(/\r$/, '');
+          buf = buf.slice(i + 1);
+          handleLine(line);
+        }
+      }
+    } catch (e) {
+      break; // device went away (e.g. it restarted)
+    } finally {
+      try { reader.releaseLock(); } catch {}
+    }
+  }
+  if (keepReading) lostConnection();
+}
+
+async function closePort() {
+  keepReading = false;
+  try { await send('stream off'); } catch {}
+  try { await reader?.cancel(); } catch {}
+  try { writer?.releaseLock(); } catch {}
+  try { await port?.close(); } catch {}
+  port = reader = writer = null;
+  $('connectBtn').textContent = 'Connect';
+  setConn('Not connected');
+}
+
+// The board restarts for pairing; wait for it and reopen the same port.
+async function lostConnection() {
+  try { writer?.releaseLock(); } catch {}
+  try { await port?.close(); } catch {}
+  const known = port?.getInfo?.() || {};
+  port = reader = writer = null;
+  setConn('Board restarting… reconnecting', 'warn');
+  for (let i = 0; i < 60; i++) {
+    await new Promise(r => setTimeout(r, 1000));
+    const ports = await navigator.serial.getPorts();
+    const p = ports.find(p => p.getInfo().usbVendorId === (known.usbVendorId ?? 0x303a)) || ports[0];
+    if (!p) continue;
+    try { await openPort(p); log('reconnected'); return; } catch {}
+  }
+  setConn('Lost connection — click Connect', 'bad');
+  $('connectBtn').textContent = 'Connect';
+}
+
+$('connectBtn').onclick = async () => {
+  if (port) return closePort();
+  try {
+    const p = await navigator.serial.requestPort({ filters: [{ usbVendorId: 0x303a }] });
+    await openPort(p);
+  } catch (e) {
+    if (e.name !== 'NotFoundError') {
+      log('could not open port: ' + e.message);
+      setConn('Port busy? Close other serial programs', 'bad');
+      port = null;
+    }
+  }
+};
+
+// ---------------- incoming ----------------
+function handleLine(line) {
+  if (!line.startsWith('@')) { if (line.trim()) log(line); if (line.includes('PAIRING MODE')) showPairing(true); return; }
+  let m;
+  try { m = JSON.parse(line.slice(1)); } catch { return; }
+  if (m.t === 's') { showPairing(false); applyStatus(m); }
+  else if (m.t === 'r') { readings.push({ t: Date.now(), rssi: m.rssi, avg: m.avg }); }
+  else if (m.t === 'p') { showPairing(true); $('pairLeft').textContent = fmtSecs(m.left); }
+  // 'e' events are also printed as plain lines, so nothing to do here
+}
+
+function fmtSecs(s) {
+  if (s < 0) return '—';
+  if (s < 90) return s + ' s';
+  return Math.floor(s / 60) + ' min ' + (s % 60) + ' s';
+}
+
+function applyStatus(s) {
+  status = s;
+  $('devId').textContent = s.id ? '· ' + s.id : '';
+  const box = $('presenceBox');
+  box.classList.toggle('present', s.presence === 'PRESENT');
+  $('presence').textContent = s.presence === 'PRESENT' ? 'In the room' : s.presence === 'AWAY' ? 'Away' : '—';
+  $('presenceHint').textContent = !s.irk ? 'No iPhone paired yet' :
+    !s.seen ? 'Phone not seen since the board started' :
+    s.presence === 'PRESENT' && s.lock ? `Locks after ${s.away - Math.min(s.strongAgo, s.away)} s without a strong signal` :
+    s.lock ? 'Locking is on' : 'Locking is off';
+  $('rssi').textContent = s.seen ? s.rssi + ' dBm' : '—';
+  $('avg').textContent = s.seen ? s.avg + ' dBm' : '—';
+  $('seenAgo').textContent = s.seen ? fmtSecs(s.seenAgo) + ' ago' : 'never';
+  $('strongAgo').textContent = s.seen ? fmtSecs(s.strongAgo) + ' ago' : 'never';
+
+  if (!editing.threshold) { $('threshold').value = s.threshold; }
+  if (!editing.away) { $('away').value = s.away; }
+  if (!editing.margin && s.margin !== undefined) { $('margin').value = s.margin; }
+  $('thresholdVal').textContent = $('threshold').value + ' dBm';
+  $('marginVal').textContent = marginText();
+  $('awayVal').textContent = fmtSecs(+$('away').value);
+  $('lock').checked = s.lock;
+
+  $('irk').textContent = s.irk || 'none — pair your iPhone';
+  $('irkWarn').hidden = !s.irkReversed;
+
+  $('wifiState').innerHTML = s.ip ? `<span class="dot ok"></span>${s.ip}` :
+    s.ssid ? '<span class="dot bad"></span>not connected' : '<span class="dot"></span>not set up';
+  $('mqttState').innerHTML = s.mqtt ? '<span class="dot ok"></span>connected' :
+    '<span class="dot bad"></span>not connected';
+  for (const [id, key] of [['ssid', 'ssid'], ['mhost', 'mqttHost'], ['mport', 'mqttPort'], ['muser', 'mqttUser']])
+    if (document.activeElement !== $(id) && !editing[id]) $(id).value = s[key];
+  $('wpass').placeholder = s.wifiPassSet ? '(saved)' : '';
+  $('mpass').placeholder = s.mqttPassSet ? '(saved)' : '';
+}
+
+function showPairing(on) {
+  $('pairing').hidden = !on;
+  $('pairBtn').disabled = on;
+}
+
+// ---------------- controls ----------------
+function marginText() {
+  const m = +$('margin').value;
+  return m + ' dB (stays down to ' + (+$('threshold').value - m) + ' dBm)';
+}
+for (const id of ['threshold', 'margin', 'away']) {
+  const el = $(id);
+  el.oninput = () => {
+    editing[id] = true;
+    $('thresholdVal').textContent = $('threshold').value + ' dBm';
+    $('marginVal').textContent = marginText();
+    $('awayVal').textContent = fmtSecs(+$('away').value);
+  };
+  el.onchange = async () => { await send(`${id} ${el.value}`); editing[id] = false; };
+}
+$('lock').onchange = () => send('lock ' + ($('lock').checked ? 'on' : 'off'));
+$('testLock').onclick = () => {
+  if (confirm('This locks Windows right now. Continue?')) send('testlock');
+};
+$('pairBtn').onclick = () => send('enroll');
+$('cancelPair').onclick = () => send('cancel');
+$('fixIrk').onclick = () => send('fixirk');
+$('irkSave').onclick = () => {
+  const v = $('irkInput').value.replace(/[^0-9a-f]/gi, '');
+  if (v.length !== 32) return alert('The key must be 32 hex characters.');
+  send('irk ' + v); $('irkInput').value = '';
+};
+for (const id of ['ssid', 'mhost', 'mport', 'muser']) $(id).oninput = () => editing[id] = true;
+$('netSave').onclick = async () => {
+  await send('set wifi_ssid ' + $('ssid').value);
+  if ($('wpass').value) await send('set wifi_pass ' + $('wpass').value);
+  await send('set mqtt_host ' + $('mhost').value.trim());
+  await send('set mqtt_port ' + ($('mport').value || 1883));
+  await send('set mqtt_user ' + $('muser').value);
+  if ($('mpass').value) await send('set mqtt_pass ' + $('mpass').value);
+  await send('reconnect');
+  $('wpass').value = $('mpass').value = '';
+  editing = {};
+};
+
+// ---------------- chart ----------------
+function css(v) { return getComputedStyle(document.documentElement).getPropertyValue(v).trim(); }
+
+function draw() {
+  const c = $('chart'), dpr = window.devicePixelRatio || 1;
+  const w = c.clientWidth, h = c.clientHeight;
+  if (c.width !== w * dpr || c.height !== h * dpr) { c.width = w * dpr; c.height = h * dpr; }
+  const g = c.getContext('2d');
+  g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  g.clearRect(0, 0, w, h);
+
+  const now = Date.now();
+  while (readings.length && readings[0].t < now - WINDOW_MS) readings.shift();
+
+  const lo = -100, hi = -30, padL = 38, padB = 18, padT = 6;
+  const x = t => padL + (w - padL - 4) * (1 - (now - t) / WINDOW_MS);
+  const y = v => padT + (h - padT - padB) * (hi - Math.max(lo, Math.min(hi, v))) / (hi - lo);
+
+  g.font = '11px system-ui, sans-serif';
+  g.fillStyle = css('--muted'); g.strokeStyle = css('--line'); g.lineWidth = 1;
+  for (let v = -100; v <= -30; v += 10) {
+    g.beginPath(); g.moveTo(padL, y(v) + .5); g.lineTo(w - 4, y(v) + .5); g.stroke();
+    g.fillText(v, 4, y(v) + 4);
+  }
+  for (let m = 0; m <= 5; m++) {
+    const label = m === 0 ? 'now' : `-${m}m`;
+    g.fillText(label, x(now - m * 60000) - g.measureText(label).width / 2, h - 4);
+  }
+
+  if (status) {
+    g.strokeStyle = css('--ok'); g.setLineDash([5, 4]); g.lineWidth = 1.5;
+    const ty = y(+$('threshold').value);
+    g.beginPath(); g.moveTo(padL, ty); g.lineTo(w - 4, ty); g.stroke();
+    if (+$('margin').value > 0) {
+      g.globalAlpha = .45;
+      const sy = y(+$('threshold').value - +$('margin').value);
+      g.beginPath(); g.moveTo(padL, sy); g.lineTo(w - 4, sy); g.stroke();
+      g.globalAlpha = 1;
+    }
+    g.setLineDash([]);
+  }
+
+  g.fillStyle = css('--chart-dot');
+  for (const r of readings) { g.beginPath(); g.arc(x(r.t), y(r.rssi), 2.5, 0, 7); g.fill(); }
+
+  g.strokeStyle = css('--chart-line'); g.lineWidth = 2;
+  g.beginPath();
+  readings.forEach((r, i) => {
+    const gap = i > 0 && r.t - readings[i - 1].t > 15000;
+    (i === 0 || gap) ? g.moveTo(x(r.t), y(r.avg)) : g.lineTo(x(r.t), y(r.avg));
+  });
+  g.stroke();
+
+  if (!readings.length) {
+    g.fillStyle = css('--muted'); g.font = '13px system-ui, sans-serif';
+    const msg = !port ? 'Connect to see live readings' : status && !status.irk ? 'Pair your iPhone to see its signal' : 'Waiting for the phone…';
+    g.fillText(msg, padL + 12, padT + 22);
+  }
+  requestAnimationFrame(draw);
+}
+requestAnimationFrame(draw);
+window.addEventListener('beforeunload', () => { if (port) send('stream off'); });
+</script>
+</body>
+</html>
