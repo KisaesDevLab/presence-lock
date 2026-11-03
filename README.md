@@ -49,11 +49,13 @@ prefer that.
 - Once in the room, it stays there while the signal is above threshold minus the
   margin, so a signal hovering at the threshold doesn't flicker.
 - With no strong reading for the away delay, it goes **away** and the PC locks.
+- When it comes back after being gone for at least 30 seconds, the board presses
+  Up arrow twice to wake the lock screen.
 
 ## Serial commands
 
 Type `help` over the serial port (115200 baud) for the full list: `status`, `watch`,
-`enroll`, `irk`, `fixirk`, `threshold`, `margin`, `away`, `lock`, `testlock`, `set`,
+`enroll`, `irk`, `fixirk`, `threshold`, `margin`, `away`, `lock`, `testlock`, `testwake`, `set`,
 `reconnect`.
 
 ## License

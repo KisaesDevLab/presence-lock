@@ -3,10 +3,11 @@
 // - Scans BLE for an iPhone, recognised through its IRK (Identity Resolving Key)
 // - Publishes presence + RSSI to Home Assistant via MQTT discovery
 // - Presses Win+L over USB HID once, when presence goes present -> away
+// - Presses Up arrow twice when the phone comes back after 30+ s away
 //
 // Security rule: this device can type into the PC, so it never listens on the
-// network. No MQTT subscribe, no OTA, no web server. The only key combo in the
-// firmware is Win+L. Settings (including Wi-Fi/MQTT logins) are changed only
+// network. No MQTT subscribe, no OTA, no web server. The only keys the firmware
+// sends are Win+L and Up arrow. Settings (including Wi-Fi/MQTT logins) are changed only
 // over the local USB serial port, by typed commands or the Web Serial page in ui/.
 //
 // Lines starting with '@' are JSON for the settings page; everything else is
@@ -46,6 +47,7 @@
 #endif
 
 static const int BOOT_PIN = 0;
+static const uint32_t WAKE_AFTER_GONE_MS = 30000;  // gone this long -> press Up x2 on return
 
 USBHIDKeyboard Keyboard;
 Preferences prefs;
@@ -195,6 +197,16 @@ static void sendWinL() {
   Keyboard.press('l');
   delay(60);
   Keyboard.releaseAll();
+}
+
+// Wakes the lock screen when the phone comes back.
+static void sendUpTwice() {
+  for (int i = 0; i < 2; i++) {
+    Keyboard.press(KEY_UP_ARROW);
+    delay(60);
+    Keyboard.releaseAll();
+    delay(100);
+  }
 }
 
 // ======================================================================
@@ -501,6 +513,7 @@ static void printHelp() {
   Serial.println("  away <seconds>    e.g. away 45");
   Serial.println("  lock on|off       enable/disable Win+L");
   Serial.println("  testlock          send Win+L now");
+  Serial.println("  testwake          send Up arrow twice now");
   Serial.println("  set <key> <value> wifi_ssid wifi_pass mqtt_host mqtt_port mqtt_user mqtt_pass");
   Serial.println("  reconnect         reconnect Wi-Fi and MQTT with the saved settings");
 }
@@ -574,6 +587,7 @@ static void handleCommand(String line) {
     prefs.putBool("lock", cfg.lockEnabled);
     Serial.printf("locking %s\n", cfg.lockEnabled ? "on" : "off");
   } else if (cmd == "testlock") { sendWinL(); event("sent Win+L (test)"); }
+  else if (cmd == "testwake") { sendUpTwice(); event("sent Up x2 (test)"); }
   else if (cmd == "bootloader") {
     // used by flash.ps1; serial-line tricks are disabled so the board can't
     // fall into download mode when a program opens or closes the port
@@ -672,6 +686,9 @@ void loop() {
   static uint32_t lastStatus = 0;
   if (stream && now - lastStatus > 1000) { lastStatus = now; printStatusJson(); }
 
+  // when the phone was last strongly seen before it went away (0 = not since boot)
+  static uint32_t goneSinceMs = 0;
+
   Presence next = presence;
   if (seenEver && now - lastStrongMs < cfg.awaySec * 1000UL && rssiEma >= cfg.threshold)
     next = PRESENT;
@@ -682,12 +699,19 @@ void loop() {
 
   if (next != presence) {
     Presence prev = presence;
+    // read before the state change: lastStrongMs keeps moving once the phone is back
+    if (next == AWAY) goneSinceMs = seenEver ? (uint32_t)lastStrongMs : 0;
     presence = next;
     event(String("presence: ") + presenceName());
     publishPresence();
     if (prev == PRESENT && presence == AWAY && cfg.lockEnabled) {
       sendWinL();
       event("locked PC (Win+L)");
+    }
+    // the BLE task already set lastStrongMs to now, so time the absence from goneSinceMs
+    if (prev == AWAY && presence == PRESENT && now - goneSinceMs >= WAKE_AFTER_GONE_MS) {
+      sendUpTwice();
+      event("phone back after " + String((now - goneSinceMs) / 1000) + " s, pressed Up x2");
     }
   }
 
