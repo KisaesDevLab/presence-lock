@@ -371,7 +371,7 @@ $('pairBtn').onclick = () => send('enroll');
 $('cancelPair').onclick = () => send('cancel');
 $('fixIrk').onclick = () => send('fixirk');
 $('forgetBtn').onclick = () => {
-  if (confirm('Remove the paired phone? The PC won't lock or wake until you pair one again.')) send('forget');
+  if (confirm("Remove the paired phone? The PC won't lock or wake until you pair one again.")) send('forget');
 };
 $('irkSave').onclick = () => {
   const v = $('irkInput').value.replace(/[^0-9a-f]/gi, '');
