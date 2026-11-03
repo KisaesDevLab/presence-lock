@@ -3,7 +3,7 @@
 // - Scans BLE for an iPhone, recognised through its IRK (Identity Resolving Key)
 // - Publishes presence + RSSI to Home Assistant via MQTT discovery
 // - Presses Win+L over USB HID once, when presence goes present -> away
-// - Presses Up arrow twice when the phone comes back after 30+ s away
+// - Presses Up arrow three times when the phone comes back after 30+ s away
 //
 // Security rule: this device can type into the PC, so it never listens on the
 // network. No MQTT subscribe, no OTA, no web server. The only keys the firmware
@@ -47,7 +47,7 @@
 #endif
 
 static const int BOOT_PIN = 0;
-static const uint32_t WAKE_AFTER_GONE_MS = 30000;  // gone this long -> press Up x2 on return
+static const uint32_t WAKE_AFTER_GONE_MS = 30000;  // gone this long -> press Up x3 on return
 
 USBHIDKeyboard Keyboard;
 Preferences prefs;
@@ -200,12 +200,12 @@ static void sendWinL() {
 }
 
 // Wakes the lock screen when the phone comes back.
-static void sendUpTwice() {
-  for (int i = 0; i < 2; i++) {
+static void sendUpThrice() {
+  for (int i = 0; i < 3; i++) {
+    if (i) delay(500);  // half a second between presses
     Keyboard.press(KEY_UP_ARROW);
     delay(60);
     Keyboard.releaseAll();
-    delay(100);
   }
 }
 
@@ -513,7 +513,7 @@ static void printHelp() {
   Serial.println("  away <seconds>    e.g. away 45");
   Serial.println("  lock on|off       enable/disable Win+L");
   Serial.println("  testlock          send Win+L now");
-  Serial.println("  testwake          send Up arrow twice now");
+  Serial.println("  testwake          send Up arrow three times now");
   Serial.println("  set <key> <value> wifi_ssid wifi_pass mqtt_host mqtt_port mqtt_user mqtt_pass");
   Serial.println("  reconnect         reconnect Wi-Fi and MQTT with the saved settings");
 }
@@ -587,7 +587,7 @@ static void handleCommand(String line) {
     prefs.putBool("lock", cfg.lockEnabled);
     Serial.printf("locking %s\n", cfg.lockEnabled ? "on" : "off");
   } else if (cmd == "testlock") { sendWinL(); event("sent Win+L (test)"); }
-  else if (cmd == "testwake") { sendUpTwice(); event("sent Up x2 (test)"); }
+  else if (cmd == "testwake") { sendUpThrice(); event("sent Up x3 (test)"); }
   else if (cmd == "bootloader") {
     // used by flash.ps1; serial-line tricks are disabled so the board can't
     // fall into download mode when a program opens or closes the port
@@ -710,8 +710,8 @@ void loop() {
     }
     // the BLE task already set lastStrongMs to now, so time the absence from goneSinceMs
     if (prev == AWAY && presence == PRESENT && now - goneSinceMs >= WAKE_AFTER_GONE_MS) {
-      sendUpTwice();
-      event("phone back after " + String((now - goneSinceMs) / 1000) + " s, pressed Up x2");
+      sendUpThrice();
+      event("phone back after " + String((now - goneSinceMs) / 1000) + " s, pressed Up x3");
     }
   }
 

@@ -50,7 +50,7 @@ prefer that.
   margin, so a signal hovering at the threshold doesn't flicker.
 - With no strong reading for the away delay, it goes **away** and the PC locks.
 - When it comes back after being gone for at least 30 seconds, the board presses
-  Up arrow twice to wake the lock screen.
+  Up arrow three times, half a second apart, to wake the lock screen.
 
 ## Serial commands
 
