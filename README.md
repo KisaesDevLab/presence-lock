@@ -35,7 +35,7 @@ and MQTT defaults. Settings saved from the settings page take precedence.
 Open `ui/index.html` in Edge or Chrome (Web Serial is needed), click **Connect** and
 choose the board's serial port. From there you can:
 
-- pair your iPhone (or paste its IRK by hand),
+- pair your iPhone (or paste its IRK by hand), or forget the paired phone,
 - set the in-room threshold, the margin and the away delay,
 - turn locking on or off and test it,
 - set Wi-Fi and Home Assistant (MQTT) details.
@@ -55,7 +55,7 @@ prefer that.
 ## Serial commands
 
 Type `help` over the serial port (115200 baud) for the full list: `status`, `watch`,
-`enroll`, `irk`, `fixirk`, `threshold`, `margin`, `away`, `lock`, `testlock`, `testwake`, `set`,
+`enroll`, `irk`, `fixirk`, `threshold`, `margin`, `away`, `lock`, `testlock`, `testwake`, `forget`, `set`,
 `reconnect`.
 
 ## License

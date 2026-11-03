@@ -189,6 +189,19 @@ static void saveIrk(const uint8_t* irk) {
   prefs.putBytes("irk", cfg.irk, 16);
 }
 
+// Removes the paired phone: nothing is tracked until a new one is paired.
+static void forgetIrk() {
+  cfg.hasIrk = false;
+  loadIrkContexts();  // stops matching before the readings are cleared
+  delay(50);          // let a scan callback that already matched finish
+  memset(cfg.irk, 0, sizeof(cfg.irk));
+  prefs.remove("irk");
+  reversedMatch = false;
+  seenEver = false;
+  rssiEma = -100;
+  presence = UNKNOWN;  // the loop reports away shortly after, without locking
+}
+
 // ======================================================================
 // USB keyboard
 // ======================================================================
@@ -513,6 +526,7 @@ static void printHelp() {
   Serial.println("  away <seconds>    e.g. away 45");
   Serial.println("  lock on|off       enable/disable Win+L");
   Serial.println("  testlock          send Win+L now");
+  Serial.println("  forget            remove the paired phone");
   Serial.println("  testwake          send Up arrow three times now");
   Serial.println("  set <key> <value> wifi_ssid wifi_pass mqtt_host mqtt_port mqtt_user mqtt_pass");
   Serial.println("  reconnect         reconnect Wi-Fi and MQTT with the saved settings");
@@ -563,6 +577,9 @@ static void handleCommand(String line) {
     reversedMatch = false;
     loadIrkContexts();
     event("IRK saved");
+  } else if (cmd == "forget") {
+    forgetIrk();
+    event("paired phone removed");
   } else if (cmd == "fixirk" && cfg.hasIrk) {
     uint8_t k[16];
     for (int i = 0; i < 16; i++) k[i] = cfg.irk[15 - i];

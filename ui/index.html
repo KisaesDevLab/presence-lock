@@ -137,6 +137,7 @@
       The key only matches in reversed byte order. <button id="fixIrk">Fix it</button></div>
     <div class="buttons">
       <button id="pairBtn" class="primary">Pair iPhone</button>
+      <button id="forgetBtn" class="danger" hidden>Forget phone</button>
     </div>
     <div id="pairing" class="pairing" hidden>
       <b>Pairing mode — <span id="pairLeft"></span> left</b>
@@ -330,6 +331,7 @@ function applyStatus(s) {
 
   $('irk').textContent = s.irk || 'none — pair your iPhone';
   $('irkWarn').hidden = !s.irkReversed;
+  $('forgetBtn').hidden = !s.irk;
 
   $('wifiState').innerHTML = s.ip ? `<span class="dot ok"></span>${s.ip}` :
     s.ssid ? '<span class="dot bad"></span>not connected' : '<span class="dot"></span>not set up';
@@ -368,6 +370,9 @@ $('testLock').onclick = () => {
 $('pairBtn').onclick = () => send('enroll');
 $('cancelPair').onclick = () => send('cancel');
 $('fixIrk').onclick = () => send('fixirk');
+$('forgetBtn').onclick = () => {
+  if (confirm('Remove the paired phone? The PC won't lock or wake until you pair one again.')) send('forget');
+};
 $('irkSave').onclick = () => {
   const v = $('irkInput').value.replace(/[^0-9a-f]/gi, '');
   if (v.length !== 32) return alert('The key must be 32 hex characters.');
